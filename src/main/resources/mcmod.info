@@ -1,0 +1,16 @@
+[
+{
+  "modid": "fairexperience",
+  "name": "Fair Experience",
+  "description": "Makes XP costs fair by converting flat level costs to raw XP costs based on required level. Compatible with any mod including Apotheosis, LevelUp2, Anvil Lawful, etc.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["brilliafy"],
+  "credits": "",
+  "logoFile": "assets/fairexperience/icon.png",
+  "screenshots": [],
+  "dependencies": ["mixinbooter"]
+}
+]
