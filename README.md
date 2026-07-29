@@ -14,23 +14,10 @@ In vanilla Minecraft, higher levels require exponentially more raw XP per level.
 
 ## 🌟 Key Features
 
-- **Fair Enchanting**: Subtracts the exact raw XP value of the enchantment requirement (e.g. 30 $\rightarrow$ 27) instead of flat level subtractions.
+- **Fair Enchanting**: Subtracts the exact raw XP value of the enchantment requirement instead of flat level subtractions.
 - **Fair Anvils**: Converts anvil level costs (e.g. 12 levels) to the raw XP equivalent of those levels, saving high-level players from massive XP penalties.
 - **Universal Mod Compatibility**: Works seamlessly with modded enchanting tables (e.g., *Apotheosis* with 95+ level enchantments), modded anvils (e.g., *Anvil Lawful*), and direct level modification mods (e.g., *LevelUp2*).
 - **Server & Singleplayer Friendly**: Authoritative on dedicated servers so vanilla clients can connect without issues. When installed on both client and server, level updates are 100% smooth.
-
----
-
-## 💡 How It Works
-
-### Vanilla vs. Fair Experience Example
-
-Suppose you are **Level 46** and do a **Level 30** enchantment (which costs 3 levels):
-
-| Game Behavior | Resulting Level | Raw XP Lost |
-| :--- | :--- | :--- |
-| **Vanilla Minecraft** | **Level 43** | `~910 XP` |
-| **Fair Experience** | **Level 44 (+ 75%)** | `306 XP` *(exact cost of 30 $\rightarrow$ 27)* |
 
 ---
 
