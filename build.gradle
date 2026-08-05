@@ -12,7 +12,7 @@ buildscript {
 apply plugin: 'net.minecraftforge.gradle.forge'
 apply plugin: 'org.spongepowered.mixin'
 
-version = '1.0.0'
+version = '1.0.1'
 group = 'com.brilliafy.fairexperience'
 archivesBaseName = 'fairexperience'
 
@@ -68,7 +68,6 @@ jar {
             "Implementation-Version": "${version}",
             "Implementation-Vendor": "brilliafy",
             "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
-            "MixinConfigs": "mixins.fairexperience.json",
             "FMLCorePluginContainsFMLMod": "true"
         ])
     }
