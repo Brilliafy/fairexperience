@@ -71,16 +71,21 @@ public class XpHelper {
 
         // Trigger network sync for server player
         if (player instanceof EntityPlayerMP) {
+            EntityPlayerMP mp = (EntityPlayerMP) player;
+            if (mp.connection != null) {
+                mp.connection.sendPacket(new net.minecraft.network.play.server.SPacketSetExperience(
+                    mp.experience, mp.experienceTotal, mp.experienceLevel));
+            }
             try {
-                // Setting lastExperience to -1 causes EntityPlayerMP's tick to send SPacketSetExperience
+                // Setting lastExperience causes EntityPlayerMP's tick to stay in sync
                 java.lang.reflect.Field field = EntityPlayerMP.class.getDeclaredField("field_71144_ck"); // lastExperience SRG
                 field.setAccessible(true);
-                field.setInt(player, -1);
+                field.setInt(player, player.experienceTotal);
             } catch (Throwable ignored) {
                 try {
                     java.lang.reflect.Field field = EntityPlayerMP.class.getDeclaredField("lastExperience");
                     field.setAccessible(true);
-                    field.setInt(player, -1);
+                    field.setInt(player, player.experienceTotal);
                 } catch (Throwable ignored2) {
                 }
             }
