@@ -71,7 +71,10 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
             }
         }
         if (reqLevel <= 0) {
-            reqLevel = Math.max(cost, self.experienceLevel);
+            if (cost == 1) reqLevel = 8;
+            else if (cost == 2) reqLevel = 15;
+            else if (cost == 3) reqLevel = 30;
+            else reqLevel = Math.max(30, cost * 10);
         }
 
         int rawXpCost = XpHelper.getEnchantFairXpCost(reqLevel, cost);
@@ -129,7 +132,9 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
 
     /**
      * Intercepts player tick to detect direct experienceLevel field modifications
-     * (e.g. experienceLevel -= 3) by mods like LevelUp2 on the server side.
+     * (e.g. experienceLevel -= 3) by mods on the server side.
+     * Raw XP modifications by mods (like XP-Tome, Ender IO, Reskillable, etc.) that properly update
+     * player total XP are respected and never overwritten.
      */
     @Inject(method = "onUpdate", at = @At("HEAD"))
     private void fairExperience$onUpdate(CallbackInfo ci) {
@@ -143,6 +148,8 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
         }
 
         if (!FairExperienceConfig.enableFairDirectModifications || self.isDead || self.getHealth() <= 0) {
+            this.fairExperience$lastLevel = self.experienceLevel;
+            this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
             return;
         }
 
@@ -151,14 +158,29 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
         }
 
         int currentLevel = self.experienceLevel;
+        int currentTotalXp = XpHelper.getPlayerTotalXp(self);
 
         if (this.fairExperience$lastLevel < 0) {
             this.fairExperience$lastLevel = currentLevel;
-            this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
+            this.fairExperience$lastTotalXp = currentTotalXp;
             return;
         }
 
         if (currentLevel < this.fairExperience$lastLevel) {
+            // Check if this was an intentional raw XP modification by a mod (e.g. XP Tome, Ender IO, Reskillable)
+            // When a mod drains raw XP, it calculates and sets player.experienceTotal to match the new XP.
+            // In that case, player.experienceTotal approximately equals currentTotalXp (and differs from lastTotalXp).
+            // A direct level decrease (e.g. `experienceLevel -= 3` with untouched experienceTotal) has
+            // player.experienceTotal out of sync with currentTotalXp.
+            boolean isRawXpModification = Math.abs(self.experienceTotal - currentTotalXp) <= 2
+                    && Math.abs(self.experienceTotal - this.fairExperience$lastTotalXp) > 2;
+
+            if (isRawXpModification) {
+                this.fairExperience$lastLevel = currentLevel;
+                this.fairExperience$lastTotalXp = currentTotalXp;
+                return;
+            }
+
             FairExperienceContext.setProcessing(true);
             try {
                 int levelDrop = this.fairExperience$lastLevel - currentLevel;
@@ -190,8 +212,8 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
                 FairExperienceContext.setProcessing(false);
             }
         } else {
-            this.fairExperience$lastLevel = self.experienceLevel;
-            this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
+            this.fairExperience$lastLevel = currentLevel;
+            this.fairExperience$lastTotalXp = currentTotalXp;
         }
     }
 }
