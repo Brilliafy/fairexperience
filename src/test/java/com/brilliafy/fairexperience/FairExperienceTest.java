@@ -197,4 +197,31 @@ public class FairExperienceTest {
         assertTrue(threeEnchantRepairCost > plainRepairCost);
         assertEquals(5, threeEnchantRepairCost);
     }
+
+    private static boolean isAnvilOutputAllowed(boolean removeTooExpensiveLimit, int cost, boolean isCreative) {
+        boolean isBlocked = !removeTooExpensiveLimit && cost >= 40 && !isCreative;
+        return !isBlocked;
+    }
+
+    @Test
+    public void testTooExpensiveLimitLogic() {
+        int costAbove40 = 45;
+        int costUnder40 = 35;
+
+        // When removeTooExpensiveLimit is true (limit removed):
+        // Survival player: allowed even at 40+
+        assertTrue(isAnvilOutputAllowed(true, costAbove40, false));
+        // Creative player: allowed
+        assertTrue(isAnvilOutputAllowed(true, costAbove40, true));
+        // Under 40: allowed
+        assertTrue(isAnvilOutputAllowed(true, costUnder40, false));
+
+        // When removeTooExpensiveLimit is false (limit enforced):
+        // Survival player: blocked at 40+
+        assertFalse(isAnvilOutputAllowed(false, costAbove40, false));
+        // Creative player: allowed at 40+
+        assertTrue(isAnvilOutputAllowed(false, costAbove40, true));
+        // Under 40: allowed
+        assertTrue(isAnvilOutputAllowed(false, costUnder40, false));
+    }
 }

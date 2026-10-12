@@ -16,7 +16,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.LinkedHashMap;
@@ -321,6 +323,10 @@ public abstract class MixinContainerRepair extends Container {
             this.maximumCost = 39;
         }
 
+        if (!FairExperienceConfig.removeTooExpensiveLimit && this.maximumCost >= 40 && !this.player.capabilities.isCreativeMode) {
+            itemstack1 = ItemStack.EMPTY;
+        }
+
         if (!itemstack1.isEmpty()) {
             itemstack1.setRepairCost(0);
             if (itemstack1.hasTagCompound()) {
@@ -336,5 +342,16 @@ public abstract class MixinContainerRepair extends Container {
 
         this.outputSlot.setInventorySlotContents(0, itemstack1);
         this.detectAndSendChanges();
+    }
+
+    @ModifyConstant(
+        method = "updateRepairOutput",
+        constant = @Constant(intValue = 40, ordinal = 2)
+    )
+    private int fairExperience$modifyMaxCostVanilla(int constant) {
+        if (FairExperienceConfig.removeTooExpensiveLimit) {
+            return Integer.MAX_VALUE;
+        }
+        return constant;
     }
 }
