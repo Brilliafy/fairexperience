@@ -1,17 +1,17 @@
 {
   "required": true,
-  "minVersion": "0.8",
   "package": "com.brilliafy.fairexperience.mixin",
-  "refmap": "mixins.fairexperience.refmap.json",
-  "target": "@env(DEFAULT)",
   "compatibilityLevel": "JAVA_8",
+  "refmap": "mixins.fairexperience.refmap.json",
   "mixins": [
-    "MixinEntityPlayer",
-    "MixinContainerEnchantment",
-    "MixinContainerRepair"
+    "MixinPlayer",
+    "MixinEnchantmentMenu",
+    "MixinAnvilMenu"
   ],
   "client": [
-    "MixinGuiRepair"
+    "MixinAnvilScreen"
   ],
-  "server": []
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

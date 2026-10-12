@@ -1,78 +1,75 @@
 buildscript {
     repositories {
-        jcenter()
-        maven { url = "https://files.minecraftforge.net/maven" }
-        maven { url = "https://repo.spongepowered.org/repository/maven-public/" }
+        maven { url = 'https://maven.minecraftforge.net' }
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        mavenCentral()
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
-        classpath 'org.spongepowered:mixingradle:0.6-SNAPSHOT'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:5.1.+'
+        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
     }
 }
-apply plugin: 'net.minecraftforge.gradle.forge'
+apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'org.spongepowered.mixin'
 
-version = '1.0.3'
+version = '1.1.0'
 group = 'com.brilliafy.fairexperience'
 archivesBaseName = 'fairexperience'
 
-sourceCompatibility = targetCompatibility = '1.8'
-compileJava {
-    sourceCompatibility = targetCompatibility = '1.8'
-}
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
 
 minecraft {
-    version = "1.12.2-14.23.5.2847"
-    runDir = "run"
-    mappings = "stable_39"
-    makeObfSourceJar = false
-    replace '@VERSION@', project.version
-}
+    mappings channel: 'official', version: '1.16.5'
 
-getAssets.enabled = false
-
-repositories {
-    mavenCentral()
-    maven { url "https://maven.cleanroommc.com" }
-    maven { url "https://repo.spongepowered.org/repository/maven-public/" }
-    flatDir { dirs "/home/Aelfwif/Downloads/PrismLauncher-Linux-Qt6-Portable-11.0.3/instances/1.12.2/minecraft/mods" }
-}
-
-dependencies {
-    compileOnly "zone.rong:mixinbooter:11.11"
-    testCompile "junit:junit:4.12"
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'mixin.debug.export', 'true'
+            mods { fairexperience { source sourceSets.main } }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'mixin.debug.export', 'true'
+            mods { fairexperience { source sourceSets.main } }
+        }
+    }
 }
 
 mixin {
-    add sourceSets.main, "mixins.fairexperience.refmap.json"
+    add sourceSets.main, 'mixins.fairexperience.refmap.json'
 }
 
-processResources {
-    inputs.property "version", project.version
-    inputs.property "mcversion", project.minecraft.version
-    from(sourceSets.main.resources.srcDirs) {
-        include 'mcmod.info'
-        expand 'version':project.version, 'mcversion':project.minecraft.version
-    }
-    from(sourceSets.main.resources.srcDirs) {
-        exclude 'mcmod.info'
-    }
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.16.5-36.2.42'
+    annotationProcessor 'org.spongepowered:mixin:0.8.4:processor'
+    testImplementation 'junit:junit:4.13.2'
 }
 
 jar {
     manifest {
         attributes([
-            "Specification-Title": "FairExperience",
-            "Specification-Vendor": "brilliafy",
-            "Specification-Version": "1",
-            "Implementation-Title": project.name,
-            "Implementation-Version": "${version}",
-            "Implementation-Vendor": "brilliafy",
-            "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
-            "FMLCorePlugin": "com.brilliafy.fairexperience.FairExperienceCoremod",
-            "FMLCorePluginContainsFMLMod": "true"
+            'Specification-Title'   : 'fairexperience',
+            'Specification-Vendor'  : 'Brilliafy',
+            'Specification-Version' : '1',
+            'Implementation-Title'  : project.name,
+            'Implementation-Version': project.version,
+            'Implementation-Vendor' : 'Brilliafy',
+            'MixinConfigs'          : 'mixins.fairexperience.json'
         ])
     }
 }
 
-jar.finalizedBy('reobfJar')
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/mods.toml') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
