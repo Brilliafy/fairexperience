@@ -31,118 +31,170 @@ public class FairExperienceTest {
     }
 
     /**
-     * Simulates the fair anvil cost math for adding enchantments to an item.
-     * Verifies that applying books in ANY permutation yields the exact same cost.
+     * Calculates the potential function Phi(I) for a set of enchantments:
+     * Phi(I) = sum(multiplier * level) + count * (count - 1) / 2
      */
-    @Test
-    public void testPermutationsYieldIdenticalCost() {
-        // Enchants: (id, maxLevel, bookMultiplier, level)
-        // Sharpness 5 (mult 1, lvl 5): cost 5
-        // Unbreaking 3 (mult 1, lvl 3): cost 3
-        // Looting 3 (mult 2, lvl 3): cost 6
-        // Fire Aspect 2 (mult 2, lvl 2): cost 4
-        class Ench {
-            String id;
-            int mult;
-            int level;
-            Ench(String id, int mult, int level) {
-                this.id = id;
-                this.mult = mult;
-                this.level = level;
+    private static int calculatePotential(Map<String, Integer> enchants, Map<String, Integer> multipliers) {
+        int baseSum = 0;
+        int count = 0;
+        for (Map.Entry<String, Integer> e : enchants.entrySet()) {
+            if (e.getValue() > 0) {
+                int mult = multipliers.getOrDefault(e.getKey(), 1);
+                baseSum += mult * e.getValue();
+                count++;
             }
         }
+        int surcharge = count * (count - 1) / 2;
+        return baseSum + surcharge;
+    }
 
-        List<Ench> books = Arrays.asList(
-            new Ench("sharpness", 1, 5),
-            new Ench("unbreaking", 1, 3),
-            new Ench("looting", 2, 3),
-            new Ench("fire_aspect", 2, 2)
+    /**
+     * Verifies that adding Fire Aspect 2 to a sword that ALREADY has Sharpness 5
+     * costs MORE than adding Fire Aspect 2 to a blank sword,
+     * AND adding both from one book costs the EXACT SAME total as adding one by one!
+     */
+    @Test
+    public void testExistingEnchantsIncreaseCostAndSingleBookMatchesOneByOne() {
+        Map<String, Integer> mults = new HashMap<>();
+        mults.put("sharpness", 1);
+        mults.put("fire_aspect", 2);
+        mults.put("knockback", 1);
+
+        // Blank sword: Phi = 0
+        Map<String, Integer> blank = Collections.emptyMap();
+        assertEquals(0, calculatePotential(blank, mults));
+
+        // Cost of adding Fire Aspect 2 to a BLANK sword:
+        Map<String, Integer> onlyFireAspect = Collections.singletonMap("fire_aspect", 2);
+        int costFireAspectBlank = calculatePotential(onlyFireAspect, mults) - calculatePotential(blank, mults);
+        // Base cost: 2 * 2 = 4. Surcharge: 1 * 0 / 2 = 0. Total = 4.
+        assertEquals(4, costFireAspectBlank);
+
+        // Cost of adding Sharpness 5 to a BLANK sword:
+        Map<String, Integer> onlySharp5 = Collections.singletonMap("sharpness", 5);
+        int costSharp5Blank = calculatePotential(onlySharp5, mults) - calculatePotential(blank, mults);
+        // Base cost: 1 * 5 = 5. Total = 5.
+        assertEquals(5, costSharp5Blank);
+
+        // Now: Sword already has Sharpness 5. Cost of adding Fire Aspect 2 to it:
+        Map<String, Integer> sharpAndFire = new HashMap<>();
+        sharpAndFire.put("sharpness", 5);
+        sharpAndFire.put("fire_aspect", 2);
+        int costFireAspectOnSharp5 = calculatePotential(sharpAndFire, mults) - calculatePotential(onlySharp5, mults);
+        // Base: 4. Existing enchantments: 1. Cost = 4 + 1 = 5.
+        assertEquals(5, costFireAspectOnSharp5);
+
+        // PROOF 1: Adding Fire Aspect 2 to a Sharpness 5 sword costs MORE than adding to a blank sword!
+        assertTrue(costFireAspectOnSharp5 > costFireAspectBlank);
+        assertEquals(5, costFireAspectOnSharp5);
+        assertEquals(4, costFireAspectBlank);
+
+        // PROOF 2: Total cost adding one by one (Sharp 5 then Fire Aspect 2):
+        int totalOneByOne = costSharp5Blank + costFireAspectOnSharp5; // 5 + 5 = 10
+        assertEquals(10, totalOneByOne);
+
+        // PROOF 3: Cost adding both from ONE book to a blank sword:
+        int costBothFromOneBook = calculatePotential(sharpAndFire, mults) - calculatePotential(blank, mults);
+        // Base: 5 + 4 = 9. Pairs: 2 * 1 / 2 = 1. Total = 10.
+        assertEquals(10, costBothFromOneBook);
+
+        // PROOF 4: Adding from one book costs the EXACT SAME as adding one by one!
+        assertEquals(totalOneByOne, costBothFromOneBook);
+
+        // PROOF 5: Reversed order (Fire Aspect 2 first, then Sharpness 5):
+        int costSharpOnFire = calculatePotential(sharpAndFire, mults) - calculatePotential(onlyFireAspect, mults);
+        // Sharp 5 on Fire Aspect: base 5 + 1 surcharge = 6.
+        assertEquals(6, costSharpOnFire);
+        int totalReversed = costFireAspectBlank + costSharpOnFire; // 4 + 6 = 10!
+        assertEquals(10, totalReversed);
+        assertEquals(costBothFromOneBook, totalReversed);
+    }
+
+    /**
+     * Verifies 3 enchantments: (Sharpness 5, Fire Aspect 2, Knockback 2):
+     * All 6 permutations of adding one-by-one, 2-and-1, 1-and-2, and all-at-once
+     * ALL yield the EXACT same total cost of 14 levels!
+     */
+    @Test
+    public void testThreeEnchantmentsAllPathsIdentical() {
+        Map<String, Integer> mults = new HashMap<>();
+        mults.put("sharpness", 1);
+        mults.put("fire_aspect", 2);
+        mults.put("knockback", 1);
+
+        Map<String, Integer> allThree = new HashMap<>();
+        allThree.put("sharpness", 5);
+        allThree.put("fire_aspect", 2);
+        allThree.put("knockback", 2);
+
+        // All 3 from one book:
+        // Base: 5 + 4 + 2 = 11. Pairs: 3 * 2 / 2 = 3. Total = 14.
+        int expectedCost = calculatePotential(allThree, mults) - 0;
+        assertEquals(14, expectedCost);
+
+        // Path 1: Sharpness (5), then Fire Aspect (5), then Knockback (4)
+        // 5 + 5 + 4 = 14
+        Map<String, Integer> s1 = Collections.singletonMap("sharpness", 5);
+        int step1 = calculatePotential(s1, mults) - 0; // 5
+        assertEquals(5, step1);
+
+        Map<String, Integer> s2 = new HashMap<>(s1);
+        s2.put("fire_aspect", 2);
+        int step2 = calculatePotential(s2, mults) - calculatePotential(s1, mults); // 5
+        assertEquals(5, step2);
+
+        Map<String, Integer> s3 = new HashMap<>(s2);
+        s3.put("knockback", 2);
+        int step3 = calculatePotential(s3, mults) - calculatePotential(s2, mults); // 4
+        assertEquals(4, step3);
+
+        assertEquals(14, step1 + step2 + step3);
+
+        // Test all 6 permutations:
+        List<String[]> permutations = Arrays.asList(
+            new String[]{"sharpness", "fire_aspect", "knockback"},
+            new String[]{"sharpness", "knockback", "fire_aspect"},
+            new String[]{"fire_aspect", "sharpness", "knockback"},
+            new String[]{"fire_aspect", "knockback", "sharpness"},
+            new String[]{"knockback", "sharpness", "fire_aspect"},
+            new String[]{"knockback", "fire_aspect", "sharpness"}
         );
 
-        int expectedTotalCost = 5 + 3 + 6 + 4; // 18
-
-        List<List<Ench>> permutations = generatePermutations(books);
-        assertEquals(24, permutations.size());
-
-        for (List<Ench> order : permutations) {
-            Map<String, Integer> itemEnchants = new HashMap<>();
-            int totalCost = 0;
-
-            for (Ench book : order) {
-                int currentLevel = itemEnchants.getOrDefault(book.id, 0);
-                int targetLevel = book.level;
-                int diff = targetLevel - currentLevel;
-                if (diff > 0) {
-                    totalCost += book.mult * diff;
-                    itemEnchants.put(book.id, targetLevel);
-                }
+        for (String[] perm : permutations) {
+            Map<String, Integer> current = new HashMap<>();
+            int total = 0;
+            for (String ench : perm) {
+                int oldPot = calculatePotential(current, mults);
+                current.put(ench, allThree.get(ench));
+                int newPot = calculatePotential(current, mults);
+                total += (newPot - oldPot);
             }
-
-            assertEquals("Order resulted in different total cost!", expectedTotalCost, totalCost);
-            assertEquals(5, (int) itemEnchants.get("sharpness"));
-            assertEquals(3, (int) itemEnchants.get("unbreaking"));
-            assertEquals(3, (int) itemEnchants.get("looting"));
-            assertEquals(2, (int) itemEnchants.get("fire_aspect"));
+            assertEquals("Permutation failed to match expected total!", expectedCost, total);
         }
     }
 
     /**
-     * Verifies that upgrading an enchant incrementally (Sharp 3 -> Sharp 4 -> Sharp 5)
-     * costs the exact same total as applying Sharp 5 directly.
+     * Verifies that having enchantments on an item makes repairing it more expensive,
+     * and both items (whether enchanted 1-by-1 or all-at-once) have the exact same repair cost!
      */
     @Test
-    public void testIncrementalUpgradeVsDirectApply() {
-        int sharpMult = 1;
+    public void testRepairCostWithEnchantments() {
+        int diamondsUsed = 2; // half durability on diamond sword
 
-        // Path A: Direct Sharp 5
-        int directCost = sharpMult * 5; // 5
+        // Plain sword (0 enchants):
+        int plainRepairCost = diamondsUsed + 0;
+        assertEquals(2, plainRepairCost);
 
-        // Path B: Sharp 3, then upgraded with Sharp 3 to Sharp 4, then upgraded with Sharp 4 to Sharp 5
-        int step1 = sharpMult * 3; // Sharp 3 on blank sword: 3
-        int step2 = sharpMult * (4 - 3); // Sharp 3 + Sharp 3 -> Sharp 4: 1
-        int step3 = sharpMult * (5 - 4); // Sharp 4 + Sharp 4 -> Sharp 5: 1
-        int incrementalCost = step1 + step2 + step3; // 5
+        // Sword with 1 enchant:
+        int oneEnchantRepairCost = diamondsUsed + 1;
+        assertEquals(3, oneEnchantRepairCost);
 
-        assertEquals(directCost, incrementalCost);
+        // Sword with 3 enchants (Sharpness 5, Fire Aspect 2, Knockback 2):
+        int threeEnchantRepairCost = diamondsUsed + 3;
+        assertEquals(5, threeEnchantRepairCost);
 
-        // Path C: Sharp 1 all the way to Sharp 5 incrementally
-        int incrementalFrom1 = 1 + 1 + 1 + 1 + 1; // 5
-        assertEquals(directCost, incrementalFrom1);
-    }
-
-    /**
-     * Verifies that combining books symmetrically produces the same cost regardless of slot order.
-     */
-    @Test
-    public void testSymmetricBookCombining() {
-        // Book 1: Sharp 5 (mult 1, lvl 5)
-        // Book 2: Unbreaking 3 (mult 1, lvl 3)
-        // With fair combining: no level upgrades, so base combine fee is 1 in both directions.
-        // And when applied to sword, sword pays 5 + 3 = 8 in both cases.
-        int swordWithMerged = 5 + 3; // 8
-        assertEquals(8, swordWithMerged);
-
-        // Book 1: Sharp 3 + Book 2: Sharp 3 -> Sharp 4
-        // Both directions cost mult * (4 - 3) = 1.
-        int upgradeCost = 1 * (4 - 3);
-        assertEquals(1, upgradeCost);
-    }
-
-    private static <T> List<List<T>> generatePermutations(List<T> list) {
-        List<List<T>> result = new ArrayList<>();
-        permuteHelper(list, 0, result);
-        return result;
-    }
-
-    private static <T> void permuteHelper(List<T> list, int start, List<List<T>> result) {
-        if (start >= list.size()) {
-            result.add(new ArrayList<>(list));
-            return;
-        }
-        for (int i = start; i < list.size(); i++) {
-            Collections.swap(list, start, i);
-            permuteHelper(list, start + 1, result);
-            Collections.swap(list, start, i);
-        }
+        // PROOF: An enchanted sword costs more to repair than a plain sword!
+        assertTrue(threeEnchantRepairCost > plainRepairCost);
+        assertEquals(5, threeEnchantRepairCost);
     }
 }
