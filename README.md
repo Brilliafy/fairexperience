@@ -16,7 +16,8 @@ In vanilla Minecraft, higher levels require exponentially more raw XP per level.
 
 - **Fair Enchanting**: Subtracts the exact raw XP value of the enchantment requirement instead of flat level subtractions.
 - **Fair Anvils**: Converts anvil level costs (e.g. 12 levels) to the raw XP equivalent of those levels, saving high-level players from massive XP penalties.
-- **Fair Anvil Combining**: Eliminates Prior Work Penalty (PWP) compounding and order dependency. Combining books or applying them to items in any order always yields the same fair cost. Books upgraded via combining (e.g., Sharpness 3 + 3 → 4, 4 + 4 → 5) cost the exact same to apply to weapons as raw books from villagers or creative mode, and items never get locked out by the vanilla 40-level "Too Expensive!" limit.
+- **Fair Anvil Combining**: Eliminates Prior Work Penalty (PWP) compounding and order dependency. Combining books or applying them to items in any order always yields the same fair cost. Books upgraded via combining (e.g., Sharpness 3 + 3 → 4, 4 + 4 → 5) cost the exact same to apply to weapons as raw books from villagers or creative mode.
+- **Configurable 40-Level Limit**: By default, removes the vanilla 40-level "Too Expensive!" limit so that heavily enchanted gear can always be repaired and upgraded. Can be toggled back to vanilla behavior in the config for players who prefer the restriction.
 - **Universal Mod Compatibility**: Works seamlessly with modded enchanting tables (e.g., *Apotheosis* with 95+ level enchantments), modded anvils (e.g., *Anvil Lawful*), and direct level modification mods (e.g., *LevelUp2*).
 - **Server & Singleplayer Friendly**: Authoritative on dedicated servers so vanilla clients can connect without issues. When installed on both client and server, level updates are 100% smooth.
 
@@ -41,6 +42,9 @@ general {
 
     # If true, enchanting table level costs will be converted to fair raw XP costs.
     B:enableFairEnchanting=true
+
+    # If true, removes the vanilla 40-level 'Too Expensive!' anvil limit, allowing operations that cost 40 or more levels. If false, operations costing 40+ levels are blocked like in vanilla.
+    B:removeTooExpensiveLimit=true
 }
 ```
 

@@ -17,7 +17,7 @@ public abstract class MixinGuiRepair {
         constant = @Constant(intValue = 40)
     )
     private int fairExperience$modifyMaxAnvilCost(int constant) {
-        if (FairExperienceConfig.enableFairAnvilCombining) {
+        if (FairExperienceConfig.removeTooExpensiveLimit) {
             return Integer.MAX_VALUE;
         }
         return constant;
