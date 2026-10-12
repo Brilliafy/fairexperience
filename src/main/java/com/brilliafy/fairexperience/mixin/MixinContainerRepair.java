@@ -60,6 +60,34 @@ public abstract class MixinContainerRepair extends Container {
         return multiplier;
     }
 
+    /**
+     * Calculates the potential function Phi(I) for a set of enchantments on an item.
+     * Phi(I) = sum(multiplier * level) + (count * (count - 1)) / 2.
+     * The cost of transitioning an item from state A to state B is Phi(B) - Phi(A).
+     * This guarantees mathematical path-independence: adding enchantments one by one
+     * costs the EXACT same total as adding them all from one book, while still making
+     * each subsequent enchantment more expensive as existing enchantments accumulate!
+     */
+    @Unique
+    private static int fairExperience$calculateEnchantmentPotential(Map<Enchantment, Integer> enchants, boolean isBook) {
+        if (enchants == null || enchants.isEmpty()) {
+            return 0;
+        }
+        int baseSum = 0;
+        int count = 0;
+        for (Map.Entry<Enchantment, Integer> entry : enchants.entrySet()) {
+            Enchantment ench = entry.getKey();
+            Integer lvlObj = entry.getValue();
+            if (ench != null && lvlObj != null && lvlObj > 0) {
+                int mult = fairExperience$getRarityMultiplier(ench, isBook);
+                baseSum += mult * lvlObj;
+                count++;
+            }
+        }
+        int surcharge = count * (count - 1) / 2;
+        return baseSum + surcharge;
+    }
+
     @Inject(method = "updateRepairOutput", at = @At("HEAD"), cancellable = true)
     private void fairExperience$onUpdateRepairOutput(CallbackInfo ci) {
         if (!FairExperienceConfig.enableFairAnvilCombining) {
@@ -71,7 +99,7 @@ public abstract class MixinContainerRepair extends Container {
         ItemStack itemstack = this.inputSlots.getStackInSlot(0);
         this.maximumCost = 1;
         int i = 0;
-        int j = 0; // Prior work penalty is completely zeroed out in fair mode
+        int j = 0; // Prior work penalty is zeroed out in fair mode
         int k = 0;
 
         if (itemstack.isEmpty()) {
@@ -93,6 +121,7 @@ public abstract class MixinContainerRepair extends Container {
 
             flag = itemstack2.getItem() == Items.ENCHANTED_BOOK && !ItemEnchantedBook.getEnchantments(itemstack2).isEmpty();
 
+            // 1. Material repair (e.g. diamonds on diamond sword)
             if (itemstack1.isItemStackDamageable() && itemstack1.getItem().getIsRepairable(itemstack, itemstack2)) {
                 int l2 = Math.min(itemstack1.getItemDamage(), itemstack1.getMaxDamage() / 4);
                 if (l2 <= 0) {
@@ -109,6 +138,11 @@ public abstract class MixinContainerRepair extends Container {
                     l2 = Math.min(itemstack1.getItemDamage(), itemstack1.getMaxDamage() / 4);
                 }
                 this.materialCost = i3;
+
+                // Having enchantments on the item makes it fairly more expensive to repair!
+                // Each enchantment on the item adds +1 level to the repair cost.
+                int enchantCount = map.size();
+                i += enchantCount;
             } else {
                 if (!flag && (itemstack1.getItem() != itemstack2.getItem() || !itemstack1.isItemStackDamageable())) {
                     this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
@@ -116,6 +150,7 @@ public abstract class MixinContainerRepair extends Container {
                     return;
                 }
 
+                // 2. Durability combine repair for two damageable items of the same type
                 if (itemstack1.isItemStackDamageable() && !flag) {
                     int l = itemstack.getMaxDamage() - itemstack.getItemDamage();
                     int i1 = itemstack2.getMaxDamage() - itemstack2.getItemDamage();
@@ -128,6 +163,8 @@ public abstract class MixinContainerRepair extends Container {
                     if (l1 < itemstack1.getItemDamage()) {
                         itemstack1.setItemDamage(l1);
                         i += 2;
+                        // Surcharge for existing enchantments on the repaired item
+                        i += map.size();
                     }
                 }
 
@@ -200,14 +237,16 @@ public abstract class MixinContainerRepair extends Container {
                         return;
                     }
                 } else {
-                    // Applying a book or another item to a tool/weapon/armor
+                    // 3. Applying a book or another item to a tool/weapon/armor
                     boolean flag2 = false;
                     boolean flag3 = false;
+                    int oldPotential = fairExperience$calculateEnchantmentPotential(map, false);
+                    Map<Enchantment, Integer> targetMap = new LinkedHashMap<>(map);
 
                     for (Enchantment enchantment1 : map1.keySet()) {
                         if (enchantment1 == null) continue;
 
-                        int i2 = map.getOrDefault(enchantment1, 0);
+                        int i2 = targetMap.getOrDefault(enchantment1, 0);
                         int j2 = map1.get(enchantment1);
                         j2 = (i2 == j2) ? j2 + 1 : Math.max(j2, i2);
 
@@ -216,7 +255,7 @@ public abstract class MixinContainerRepair extends Container {
                             flag1 = true;
                         }
 
-                        for (Enchantment enchantment : map.keySet()) {
+                        for (Enchantment enchantment : targetMap.keySet()) {
                             if (enchantment != enchantment1 && !enchantment1.isCompatibleWith(enchantment)) {
                                 flag1 = false;
                                 ++i;
@@ -230,13 +269,7 @@ public abstract class MixinContainerRepair extends Container {
                             if (j2 > enchantment1.getMaxLevel()) {
                                 j2 = enchantment1.getMaxLevel();
                             }
-                            map.put(enchantment1, j2);
-
-                            int k3 = fairExperience$getRarityMultiplier(enchantment1, isBook2);
-                            int levelDiff = j2 - i2;
-                            if (levelDiff > 0) {
-                                i += k3 * levelDiff;
-                            }
+                            targetMap.put(enchantment1, j2);
 
                             if (itemstack.getCount() > 1) {
                                 this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
@@ -250,6 +283,13 @@ public abstract class MixinContainerRepair extends Container {
                         this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
                         this.maximumCost = 0;
                         return;
+                    }
+
+                    if (flag2) {
+                        map = targetMap;
+                        int newPotential = fairExperience$calculateEnchantmentPotential(map, false);
+                        int enchantCost = Math.max(0, newPotential - oldPotential);
+                        i += enchantCost;
                     }
                 }
             }
