@@ -29,4 +29,14 @@ public class FairExperience {
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
     }
+
+    @Mod.EventBusSubscriber(modid = FairExperience.MODID)
+    public static class EventHandler {
+        @net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+        public static void onConfigChanged(net.minecraftforge.fml.client.event.ConfigChangedEvent.OnConfigChangedEvent event) {
+            if (FairExperience.MODID.equals(event.getModID())) {
+                net.minecraftforge.common.config.ConfigManager.sync(FairExperience.MODID, net.minecraftforge.common.config.Config.Type.INSTANCE);
+            }
+        }
+    }
 }
