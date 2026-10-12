@@ -3,15 +3,18 @@ package com.brilliafy.fairexperience.mixin;
 import com.brilliafy.fairexperience.FairExperienceConfig;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.init.Items;
-import net.minecraft.inventory.Container;
-import net.minecraft.inventory.ContainerRepair;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.inventory.CraftResultInventory;
 import net.minecraft.inventory.IInventory;
-import net.minecraft.item.ItemEnchantedBook;
+import net.minecraft.inventory.container.RepairContainer;
+import net.minecraft.item.EnchantedBookItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.util.IntReferenceHolder;
+import net.minecraft.util.text.StringTextComponent;
 import net.minecraftforge.common.ForgeHooks;
 import org.apache.commons.lang3.StringUtils;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -26,26 +29,38 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-@Mixin(ContainerRepair.class)
-public abstract class MixinContainerRepair extends Container {
+@Mixin(RepairContainer.class)
+public abstract class MixinRepairContainer {
 
-    @Shadow private IInventory outputSlot;
-    @Shadow private IInventory inputSlots;
-    @Shadow public int maximumCost;
-    @Shadow public int materialCost;
-    @Shadow private String repairedItemName;
-    @Shadow private EntityPlayer player;
+    @Shadow
+    protected IInventory inputSlots;
+
+    @Shadow
+    protected CraftResultInventory resultSlots;
+
+    @Shadow
+    protected PlayerEntity player;
+
+    @Shadow
+    public int repairItemCountCost;
+
+    @Shadow
+    private String itemName;
+
+    @Shadow
+    @Final
+    private IntReferenceHolder cost;
+
+    @Shadow
+    public abstract void broadcastChanges();
 
     @Unique
     private static int fairExperience$getRarityMultiplier(Enchantment enchantment, boolean isBook) {
         if (enchantment == null || enchantment.getRarity() == null) {
             return 1;
         }
-        int multiplier = 1;
+        int multiplier;
         switch (enchantment.getRarity()) {
-            case COMMON:
-                multiplier = 1;
-                break;
             case UNCOMMON:
                 multiplier = 2;
                 break;
@@ -55,6 +70,10 @@ public abstract class MixinContainerRepair extends Container {
             case VERY_RARE:
                 multiplier = 8;
                 break;
+            case COMMON:
+            default:
+                multiplier = 1;
+                break;
         }
         if (isBook) {
             multiplier = Math.max(1, multiplier / 2);
@@ -63,12 +82,11 @@ public abstract class MixinContainerRepair extends Container {
     }
 
     /**
-     * Calculates the potential function Phi(I) for a set of enchantments on an item.
-     * Phi(I) = sum(multiplier * level) + (count * (count - 1)) / 2.
-     * The cost of transitioning an item from state A to state B is Phi(B) - Phi(A).
-     * This guarantees mathematical path-independence: adding enchantments one by one
-     * costs the EXACT same total as adding them all from one book, while still making
-     * each subsequent enchantment more expensive as existing enchantments accumulate!
+     * Calculates the potential function Phi(I) for a set of enchantments on an item:
+     * <pre>Phi(I) = sum(multiplier * level) + (count * (count - 1)) / 2</pre>
+     * The cost of transitioning an item from state A to state B is {@code Phi(B) - Phi(A)},
+     * which guarantees path independence while still making each subsequent enchantment
+     * more expensive as existing enchantments accumulate.
      */
     @Unique
     private static int fairExperience$calculateEnchantmentPotential(Map<Enchantment, Integer> enchants, boolean isBook) {
@@ -90,80 +108,78 @@ public abstract class MixinContainerRepair extends Container {
         return baseSum + surcharge;
     }
 
-    @Inject(method = "updateRepairOutput", at = @At("HEAD"), cancellable = true)
-    private void fairExperience$onUpdateRepairOutput(CallbackInfo ci) {
+    @Inject(method = "createResult", at = @At("HEAD"), cancellable = true)
+    private void fairExperience$createResult(CallbackInfo ci) {
         if (!FairExperienceConfig.enableFairAnvilCombining) {
             return;
         }
 
         ci.cancel();
 
-        ItemStack itemstack = this.inputSlots.getStackInSlot(0);
-        this.maximumCost = 1;
+        ItemStack itemstack = this.inputSlots.getItem(0);
+        this.cost.set(1);
         int i = 0;
         int j = 0; // Prior work penalty is zeroed out in fair mode
         int k = 0;
 
         if (itemstack.isEmpty()) {
-            this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-            this.maximumCost = 0;
+            this.resultSlots.setItem(0, ItemStack.EMPTY);
+            this.cost.set(0);
             return;
         }
 
         ItemStack itemstack1 = itemstack.copy();
-        ItemStack itemstack2 = this.inputSlots.getStackInSlot(1);
+        ItemStack itemstack2 = this.inputSlots.getItem(1);
         Map<Enchantment, Integer> map = EnchantmentHelper.getEnchantments(itemstack1);
-        this.materialCost = 0;
+        this.repairItemCountCost = 0;
         boolean flag = false;
 
         if (!itemstack2.isEmpty()) {
-            if (!ForgeHooks.onAnvilChange((ContainerRepair) (Object) this, itemstack, itemstack2, outputSlot, repairedItemName, j)) {
+            if (!ForgeHooks.onAnvilChange((RepairContainer) (Object) this, itemstack, itemstack2, this.resultSlots, this.itemName, j, this.player)) {
                 return;
             }
 
-            flag = itemstack2.getItem() == Items.ENCHANTED_BOOK && !ItemEnchantedBook.getEnchantments(itemstack2).isEmpty();
+            flag = itemstack2.getItem() == Items.ENCHANTED_BOOK && !EnchantedBookItem.getEnchantments(itemstack2).isEmpty();
 
-            // 1. Material repair (e.g. diamonds on diamond sword)
-            if (itemstack1.isItemStackDamageable() && itemstack1.getItem().getIsRepairable(itemstack, itemstack2)) {
-                int l2 = Math.min(itemstack1.getItemDamage(), itemstack1.getMaxDamage() / 4);
+            // 1. Material repair (e.g. diamonds on a diamond sword)
+            if (itemstack1.isDamageableItem() && itemstack1.getItem().isValidRepairItem(itemstack, itemstack2)) {
+                int l2 = Math.min(itemstack1.getDamageValue(), itemstack1.getMaxDamage() / 4);
                 if (l2 <= 0) {
-                    this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                    this.maximumCost = 0;
+                    this.resultSlots.setItem(0, ItemStack.EMPTY);
+                    this.cost.set(0);
                     return;
                 }
 
                 int i3;
                 for (i3 = 0; l2 > 0 && i3 < itemstack2.getCount(); ++i3) {
-                    int j3 = itemstack1.getItemDamage() - l2;
-                    itemstack1.setItemDamage(j3);
+                    int j3 = itemstack1.getDamageValue() - l2;
+                    itemstack1.setDamageValue(j3);
                     ++i;
-                    l2 = Math.min(itemstack1.getItemDamage(), itemstack1.getMaxDamage() / 4);
+                    l2 = Math.min(itemstack1.getDamageValue(), itemstack1.getMaxDamage() / 4);
                 }
-                this.materialCost = i3;
+                this.repairItemCountCost = i3;
 
-                // Having enchantments on the item makes it fairly more expensive to repair!
-                // Each enchantment on the item adds +1 level to the repair cost.
-                int enchantCount = map.size();
-                i += enchantCount;
+                // Existing enchantments make repairs fairly more expensive: +1 level each.
+                i += map.size();
             } else {
-                if (!flag && (itemstack1.getItem() != itemstack2.getItem() || !itemstack1.isItemStackDamageable())) {
-                    this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                    this.maximumCost = 0;
+                if (!flag && (itemstack1.getItem() != itemstack2.getItem() || !itemstack1.isDamageableItem())) {
+                    this.resultSlots.setItem(0, ItemStack.EMPTY);
+                    this.cost.set(0);
                     return;
                 }
 
                 // 2. Durability combine repair for two damageable items of the same type
-                if (itemstack1.isItemStackDamageable() && !flag) {
-                    int l = itemstack.getMaxDamage() - itemstack.getItemDamage();
-                    int i1 = itemstack2.getMaxDamage() - itemstack2.getItemDamage();
+                if (itemstack1.isDamageableItem() && !flag) {
+                    int l = itemstack.getMaxDamage() - itemstack.getDamageValue();
+                    int i1 = itemstack2.getMaxDamage() - itemstack2.getDamageValue();
                     int j1 = i1 + itemstack1.getMaxDamage() * 12 / 100;
                     int k1 = l + j1;
                     int l1 = itemstack1.getMaxDamage() - k1;
                     if (l1 < 0) {
                         l1 = 0;
                     }
-                    if (l1 < itemstack1.getItemDamage()) {
-                        itemstack1.setItemDamage(l1);
+                    if (l1 < itemstack1.getDamageValue()) {
+                        itemstack1.setDamageValue(l1);
                         i += 2;
                         // Surcharge for existing enchantments on the repaired item
                         i += map.size();
@@ -185,7 +201,9 @@ public abstract class MixinContainerRepair extends Container {
                     Map<Enchantment, Integer> resultMap = new LinkedHashMap<>();
 
                     for (Enchantment ench : allEnchants) {
-                        if (ench == null) continue;
+                        if (ench == null) {
+                            continue;
+                        }
 
                         int lvl1 = map.getOrDefault(ench, 0);
                         int lvl2 = map1.getOrDefault(ench, 0);
@@ -220,8 +238,8 @@ public abstract class MixinContainerRepair extends Container {
                     }
 
                     if (anyIncompatible && !anyCompatible) {
-                        this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                        this.maximumCost = 0;
+                        this.resultSlots.setItem(0, ItemStack.EMPTY);
+                        this.cost.set(0);
                         return;
                     }
 
@@ -234,8 +252,8 @@ public abstract class MixinContainerRepair extends Container {
                     map = resultMap;
 
                     if (itemstack.getCount() > 1) {
-                        this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                        this.maximumCost = 0;
+                        this.resultSlots.setItem(0, ItemStack.EMPTY);
+                        this.cost.set(0);
                         return;
                     }
                 } else {
@@ -246,14 +264,16 @@ public abstract class MixinContainerRepair extends Container {
                     Map<Enchantment, Integer> targetMap = new LinkedHashMap<>(map);
 
                     for (Enchantment enchantment1 : map1.keySet()) {
-                        if (enchantment1 == null) continue;
+                        if (enchantment1 == null) {
+                            continue;
+                        }
 
                         int i2 = targetMap.getOrDefault(enchantment1, 0);
                         int j2 = map1.get(enchantment1);
                         j2 = (i2 == j2) ? j2 + 1 : Math.max(j2, i2);
 
-                        boolean flag1 = enchantment1.canApply(itemstack);
-                        if (this.player.capabilities.isCreativeMode || itemstack.getItem() == Items.ENCHANTED_BOOK) {
+                        boolean flag1 = enchantment1.canEnchant(itemstack);
+                        if (this.player.abilities.instabuild || itemstack.getItem() == Items.ENCHANTED_BOOK) {
                             flag1 = true;
                         }
 
@@ -274,16 +294,16 @@ public abstract class MixinContainerRepair extends Container {
                             targetMap.put(enchantment1, j2);
 
                             if (itemstack.getCount() > 1) {
-                                this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                                this.maximumCost = 0;
+                                this.resultSlots.setItem(0, ItemStack.EMPTY);
+                                this.cost.set(0);
                                 return;
                             }
                         }
                     }
 
                     if (flag3 && !flag2) {
-                        this.outputSlot.setInventorySlotContents(0, ItemStack.EMPTY);
-                        this.maximumCost = 0;
+                        this.resultSlots.setItem(0, ItemStack.EMPTY);
+                        this.cost.set(0);
                         return;
                     }
 
@@ -297,55 +317,59 @@ public abstract class MixinContainerRepair extends Container {
             }
         }
 
-        if (StringUtils.isBlank(this.repairedItemName)) {
-            if (itemstack.hasDisplayName()) {
+        if (StringUtils.isBlank(this.itemName)) {
+            if (itemstack.hasCustomHoverName()) {
                 k = 1;
                 i += k;
-                itemstack1.clearCustomName();
+                itemstack1.resetHoverName();
             }
-        } else if (!this.repairedItemName.equals(itemstack.getDisplayName())) {
+        } else if (!this.itemName.equals(itemstack.getHoverName().getString())) {
             k = 1;
             i += k;
-            itemstack1.setStackDisplayName(this.repairedItemName);
+            itemstack1.setHoverName(new StringTextComponent(this.itemName));
         }
 
-        if (flag && !itemstack1.getItem().isBookEnchantable(itemstack1, itemstack2)) {
+        if (flag && !itemstack1.isBookEnchantable(itemstack2)) {
             itemstack1 = ItemStack.EMPTY;
         }
 
-        this.maximumCost = i;
+        this.cost.set(i);
 
         if (i <= 0) {
             itemstack1 = ItemStack.EMPTY;
         }
 
-        if (k == i && k > 0 && this.maximumCost >= 40) {
-            this.maximumCost = 39;
+        if (k == i && k > 0 && this.cost.get() >= 40) {
+            this.cost.set(39);
         }
 
-        if (!FairExperienceConfig.removeTooExpensiveLimit && this.maximumCost >= 40 && !this.player.capabilities.isCreativeMode) {
+        if (!FairExperienceConfig.removeTooExpensiveLimit && this.cost.get() >= 40 && !this.player.abilities.instabuild) {
             itemstack1 = ItemStack.EMPTY;
         }
 
         if (!itemstack1.isEmpty()) {
             itemstack1.setRepairCost(0);
-            if (itemstack1.hasTagCompound()) {
-                itemstack1.getTagCompound().removeTag("RepairCost");
-            }
+            if (itemstack1.hasTag()) {
+                itemstack1.getTag().remove("RepairCost");
 
-            if (itemstack1.getItem() == Items.ENCHANTED_BOOK && itemstack1.hasTagCompound()) {
-                itemstack1.getTagCompound().removeTag("StoredEnchantments");
+                if (itemstack1.getItem() == Items.ENCHANTED_BOOK) {
+                    itemstack1.getTag().remove("StoredEnchantments");
+                }
             }
 
             EnchantmentHelper.setEnchantments(map, itemstack1);
         }
 
-        this.outputSlot.setInventorySlotContents(0, itemstack1);
-        this.detectAndSendChanges();
+        this.resultSlots.setItem(0, itemstack1);
+        this.broadcastChanges();
     }
 
+    /**
+     * Patches the vanilla 40-level "Too Expensive!" cap when fair anvil combining is disabled
+     * but the limit is still configured to be removed.
+     */
     @ModifyConstant(
-        method = "updateRepairOutput",
+        method = "createResult",
         constant = @Constant(intValue = 40, ordinal = 2)
     )
     private int fairExperience$modifyMaxCostVanilla(int constant) {

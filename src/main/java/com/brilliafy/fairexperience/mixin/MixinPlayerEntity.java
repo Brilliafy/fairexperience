@@ -4,8 +4,8 @@ import com.brilliafy.fairexperience.FairExperienceConfig;
 import com.brilliafy.fairexperience.FairExperienceContext;
 import com.brilliafy.fairexperience.IFairExperiencePlayer;
 import com.brilliafy.fairexperience.XpHelper;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.inventory.ContainerEnchantment;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.inventory.container.EnchantmentContainer;
 import net.minecraft.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -14,14 +14,16 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(EntityPlayer.class)
-public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
+@Mixin(PlayerEntity.class)
+public abstract class MixinPlayerEntity implements IFairExperiencePlayer {
 
     @Shadow
-    protected int xpSeed;
+    protected int enchantmentSeed;
 
-    @Unique private int fairExperience$lastLevel = -1;
-    @Unique private int fairExperience$lastTotalXp = -1;
+    @Unique
+    private int fairExperience$lastLevel = -1;
+    @Unique
+    private int fairExperience$lastTotalXp = -1;
 
     @Override
     public int fairExperience$getLastLevel() {
@@ -44,37 +46,41 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
     }
 
     /**
-     * Intercepts player.onEnchant(stack, cost) called by Enchanting Table container or mods.
-     * Must only modify XP state on the server side to avoid client packet desync/double-dipping.
+     * Intercepts the experience deduction performed by the enchanting table
+     * ({@code EnchantmentContainer.clickMenuButton} calls this with the flat level cost).
+     * Only the server side modifies XP state to avoid client packet desyncs.
      */
-    @Inject(method = "onEnchant", at = @At("HEAD"), cancellable = true)
-    private void fairExperience$onEnchant(ItemStack enchantedItem, int cost, CallbackInfo ci) {
+    @Inject(method = "onEnchantmentPerformed", at = @At("HEAD"), cancellable = true)
+    private void fairExperience$onEnchantmentPerformed(ItemStack enchantedItem, int cost, CallbackInfo ci) {
         if (!FairExperienceConfig.enableFairEnchanting) {
             return;
         }
 
-        EntityPlayer self = (EntityPlayer) (Object) this;
-        if (self.world.isRemote || self.capabilities.isCreativeMode) {
+        PlayerEntity self = (PlayerEntity) (Object) this;
+        if (self.level.isClientSide || self.abilities.instabuild) {
             return;
         }
 
         ci.cancel();
 
         int reqLevel = FairExperienceContext.getEnchantReqLevel();
-        if (reqLevel <= 0) {
-            if (self.openContainer instanceof ContainerEnchantment) {
-                ContainerEnchantment container = (ContainerEnchantment) self.openContainer;
-                int slotId = cost - 1;
-                if (container.enchantLevels != null && slotId >= 0 && slotId < container.enchantLevels.length) {
-                    reqLevel = container.enchantLevels[slotId];
-                }
+        if (reqLevel <= 0 && self.containerMenu instanceof EnchantmentContainer) {
+            EnchantmentContainer container = (EnchantmentContainer) self.containerMenu;
+            int slotId = cost - 1;
+            if (container.costs != null && slotId >= 0 && slotId < container.costs.length) {
+                reqLevel = container.costs[slotId];
             }
         }
         if (reqLevel <= 0) {
-            if (cost == 1) reqLevel = 8;
-            else if (cost == 2) reqLevel = 15;
-            else if (cost == 3) reqLevel = 30;
-            else reqLevel = Math.max(30, cost * 10);
+            if (cost == 1) {
+                reqLevel = 8;
+            } else if (cost == 2) {
+                reqLevel = 15;
+            } else if (cost == 3) {
+                reqLevel = 30;
+            } else {
+                reqLevel = Math.max(30, cost * 10);
+            }
         }
 
         int rawXpCost = XpHelper.getEnchantFairXpCost(reqLevel, cost);
@@ -82,24 +88,25 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
         int newTotalXp = Math.max(0, currentTotalXp - rawXpCost);
 
         XpHelper.setPlayerTotalXp(self, newTotalXp);
-        this.xpSeed = self.getRNG().nextInt();
+        this.enchantmentSeed = self.getRandom().nextInt();
 
         this.fairExperience$lastLevel = self.experienceLevel;
         this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
     }
 
     /**
-     * Intercepts player.addExperienceLevel(levels).
-     * For negative values (level deductions), applies fair raw XP cost on server.
+     * Intercepts {@code giveExperienceLevels(levels)}. For negative values (level deductions
+     * such as the anvil cost) the flat level cost is converted to a fair raw XP cost on the
+     * server side.
      */
-    @Inject(method = "addExperienceLevel", at = @At("HEAD"), cancellable = true)
-    private void fairExperience$addExperienceLevel(int levels, CallbackInfo ci) {
+    @Inject(method = "giveExperienceLevels", at = @At("HEAD"), cancellable = true)
+    private void fairExperience$giveExperienceLevels(int levels, CallbackInfo ci) {
         if (levels >= 0) {
             return; // Gains are handled normally by vanilla
         }
 
-        EntityPlayer self = (EntityPlayer) (Object) this;
-        if (self.world.isRemote || self.capabilities.isCreativeMode) {
+        PlayerEntity self = (PlayerEntity) (Object) this;
+        if (self.level.isClientSide || self.abilities.instabuild) {
             return;
         }
 
@@ -107,9 +114,11 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
         int reqLevel = FairExperienceContext.getEnchantReqLevel();
 
         if (reqLevel > 0) {
-            if (!FairExperienceConfig.enableFairEnchanting) return;
-        } else {
-            if (!FairExperienceConfig.enableFairAnvils) return;
+            if (!FairExperienceConfig.enableFairEnchanting) {
+                return;
+            }
+        } else if (!FairExperienceConfig.enableFairAnvils) {
+            return;
         }
 
         ci.cancel();
@@ -131,23 +140,22 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
     }
 
     /**
-     * Intercepts player tick to detect direct experienceLevel field modifications
-     * (e.g. experienceLevel -= 3) by mods on the server side.
-     * Raw XP modifications by mods (like XP-Tome, Ender IO, Reskillable, etc.) that properly update
-     * player total XP are respected and never overwritten.
+     * Detects direct {@code experienceLevel} field modifications (e.g. {@code experienceLevel -= 3})
+     * performed by other mods on the server side and converts them to fair raw XP costs.
+     * Raw XP modifications that properly update {@code totalExperience} are respected and never
+     * overwritten.
      */
-    @Inject(method = "onUpdate", at = @At("HEAD"))
-    private void fairExperience$onUpdate(CallbackInfo ci) {
-        EntityPlayer self = (EntityPlayer) (Object) this;
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void fairExperience$onTick(CallbackInfo ci) {
+        PlayerEntity self = (PlayerEntity) (Object) this;
 
-        // On client side, simply track current level without modifying experience state to prevent double-dipping/flickering
-        if (self.world.isRemote) {
+        if (self.level.isClientSide) {
             this.fairExperience$lastLevel = self.experienceLevel;
             this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
             return;
         }
 
-        if (!FairExperienceConfig.enableFairDirectModifications || self.isDead || self.getHealth() <= 0) {
+        if (!FairExperienceConfig.enableFairDirectModifications || self.isDeadOrDying()) {
             this.fairExperience$lastLevel = self.experienceLevel;
             this.fairExperience$lastTotalXp = XpHelper.getPlayerTotalXp(self);
             return;
@@ -167,13 +175,10 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
         }
 
         if (currentLevel < this.fairExperience$lastLevel) {
-            // Check if this was an intentional raw XP modification by a mod (e.g. XP Tome, Ender IO, Reskillable)
-            // When a mod drains raw XP, it calculates and sets player.experienceTotal to match the new XP.
-            // In that case, player.experienceTotal approximately equals currentTotalXp (and differs from lastTotalXp).
-            // A direct level decrease (e.g. `experienceLevel -= 3` with untouched experienceTotal) has
-            // player.experienceTotal out of sync with currentTotalXp.
-            boolean isRawXpModification = Math.abs(self.experienceTotal - currentTotalXp) <= 2
-                    && Math.abs(self.experienceTotal - this.fairExperience$lastTotalXp) > 2;
+            // A raw-XP draining mod recalculates and stores totalExperience, so it stays in sync
+            // with the recomputed total. A bare level decrease leaves totalExperience stale.
+            boolean isRawXpModification = Math.abs(self.totalExperience - currentTotalXp) <= 2
+                && Math.abs(self.totalExperience - this.fairExperience$lastTotalXp) > 2;
 
             if (isRawXpModification) {
                 this.fairExperience$lastLevel = currentLevel;
@@ -189,11 +194,11 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
 
                 if (reqLevel > 0) {
                     rawXpCost = XpHelper.getEnchantFairXpCost(reqLevel, levelDrop);
-                } else if (self.openContainer instanceof ContainerEnchantment) {
-                    ContainerEnchantment container = (ContainerEnchantment) self.openContainer;
+                } else if (self.containerMenu instanceof EnchantmentContainer) {
+                    EnchantmentContainer container = (EnchantmentContainer) self.containerMenu;
                     int slotId = levelDrop - 1;
-                    if (container.enchantLevels != null && slotId >= 0 && slotId < container.enchantLevels.length && container.enchantLevels[slotId] > 0) {
-                        rawXpCost = XpHelper.getEnchantFairXpCost(container.enchantLevels[slotId], levelDrop);
+                    if (container.costs != null && slotId >= 0 && slotId < container.costs.length && container.costs[slotId] > 0) {
+                        rawXpCost = XpHelper.getEnchantFairXpCost(container.costs[slotId], levelDrop);
                     } else {
                         rawXpCost = XpHelper.getAnvilFairXpCost(levelDrop);
                     }
@@ -201,7 +206,9 @@ public abstract class MixinEntityPlayer implements IFairExperiencePlayer {
                     rawXpCost = XpHelper.getAnvilFairXpCost(levelDrop);
                 }
 
-                int baseTotalXp = this.fairExperience$lastTotalXp > 0 ? this.fairExperience$lastTotalXp : XpHelper.getRawXpForLevel(this.fairExperience$lastLevel);
+                int baseTotalXp = this.fairExperience$lastTotalXp > 0
+                    ? this.fairExperience$lastTotalXp
+                    : XpHelper.getRawXpForLevel(this.fairExperience$lastLevel);
                 int newTotalXp = Math.max(0, baseTotalXp - rawXpCost);
 
                 XpHelper.setPlayerTotalXp(self, newTotalXp);

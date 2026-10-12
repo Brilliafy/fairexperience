@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="MIT"
+issueTrackerURL="https://github.com/Brilliafy/fairexperience/issues"
+
+[[mods]]
+modId="fairexperience"
+version="${version}"
+displayName="Fair Experience"
+authors="Brilliafy"
+description='''Converts flat XP level costs into fair raw XP costs for Enchanting Tables and Anvils.'''
+logoFile="assets/fairexperience/icon.png"
+
+[[dependencies.fairexperience]]
+    modId="forge"
+    mandatory=true
+    versionRange="[36,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.fairexperience]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.16.5]"
+    ordering="NONE"
+    side="BOTH"

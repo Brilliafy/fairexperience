@@ -1,13 +1,18 @@
 package com.brilliafy.fairexperience;
 
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.entity.player.PlayerEntity;
 
-public class XpHelper {
+/**
+ * Pure maths for converting flat level costs into fair raw XP costs.
+ * The level-up curve is identical for all Minecraft versions up to 1.20.1.
+ */
+public final class XpHelper {
+
+    private XpHelper() {
+    }
 
     /**
-     * Returns the experience points needed to level up from level to (level + 1).
-     * Equivalent to EntityPlayer.xpBarCap().
+     * Returns the experience points needed to level up from {@code level} to {@code level + 1}.
      */
     public static int getXpBarCap(int level) {
         if (level >= 30) {
@@ -20,7 +25,7 @@ public class XpHelper {
     }
 
     /**
-     * Returns total accumulated raw experience points required to reach 'level' starting from Level 0.
+     * Returns total accumulated raw experience points required to reach {@code level} starting from level 0.
      */
     public static int getRawXpForLevel(int level) {
         if (level <= 0) {
@@ -38,65 +43,48 @@ public class XpHelper {
     /**
      * Calculates the player's exact current total raw XP (level + progress).
      */
-    public static int getPlayerTotalXp(EntityPlayer player) {
+    public static int getPlayerTotalXp(PlayerEntity player) {
         int levelXp = getRawXpForLevel(player.experienceLevel);
         int cap = getXpBarCap(player.experienceLevel);
-        int progressXp = Math.round(player.experience * cap);
+        int progressXp = Math.round(player.experienceProgress * cap);
         return levelXp + progressXp;
     }
 
     /**
-     * Sets the player's total raw XP, correctly updating experienceLevel, experience progress,
-     * and experienceTotal. Also triggers server-to-client packet sync for EntityPlayerMP.
+     * Sets the player's total raw XP, correctly updating experienceLevel, experience progress
+     * and totalExperience. Server-side syncing to the client is handled by the vanilla
+     * {@code ServerPlayerEntity} tick, which re-sends the experience packet whenever
+     * {@code totalExperience} differs from the last value it sent.
      */
-    public static void setPlayerTotalXp(EntityPlayer player, int newTotalXp) {
+    public static void setPlayerTotalXp(PlayerEntity player, int newTotalXp) {
         if (newTotalXp <= 0) {
             player.experienceLevel = 0;
-            player.experience = 0.0F;
-            player.experienceTotal = 0;
-        } else {
-            int level = getLevelForRawXp(newTotalXp);
-            int baseLevelXp = getRawXpForLevel(level);
-            int remainder = newTotalXp - baseLevelXp;
-
-            player.experienceLevel = level;
-            int cap = getXpBarCap(level);
-            float progress = cap > 0 ? (float) remainder / (float) cap : 0.0F;
-            if (progress >= 1.0F) {
-                progress = 0.9999F;
-            }
-            player.experience = progress;
-            player.experienceTotal = newTotalXp;
+            player.experienceProgress = 0.0F;
+            player.totalExperience = 0;
+            return;
         }
 
-        // Trigger network sync for server player
-        if (player instanceof EntityPlayerMP) {
-            EntityPlayerMP mp = (EntityPlayerMP) player;
-            if (mp.connection != null) {
-                mp.connection.sendPacket(new net.minecraft.network.play.server.SPacketSetExperience(
-                    mp.experience, mp.experienceTotal, mp.experienceLevel));
-            }
-            try {
-                // Setting lastExperience causes EntityPlayerMP's tick to stay in sync
-                java.lang.reflect.Field field = EntityPlayerMP.class.getDeclaredField("field_71144_ck"); // lastExperience SRG
-                field.setAccessible(true);
-                field.setInt(player, player.experienceTotal);
-            } catch (Throwable ignored) {
-                try {
-                    java.lang.reflect.Field field = EntityPlayerMP.class.getDeclaredField("lastExperience");
-                    field.setAccessible(true);
-                    field.setInt(player, player.experienceTotal);
-                } catch (Throwable ignored2) {
-                }
-            }
+        int level = getLevelForRawXp(newTotalXp);
+        int baseLevelXp = getRawXpForLevel(level);
+        int remainder = newTotalXp - baseLevelXp;
+
+        player.experienceLevel = level;
+        int cap = getXpBarCap(level);
+        float progress = cap > 0 ? (float) remainder / (float) cap : 0.0F;
+        if (progress >= 1.0F) {
+            progress = 0.9999F;
         }
+        player.experienceProgress = progress;
+        player.totalExperience = newTotalXp;
     }
 
     /**
-     * Finds the highest level L such that getRawXpForLevel(L) <= totalXp.
+     * Finds the highest level L such that {@code getRawXpForLevel(L) <= totalXp}.
      */
     public static int getLevelForRawXp(int totalXp) {
-        if (totalXp <= 0) return 0;
+        if (totalXp <= 0) {
+            return 0;
+        }
 
         int low = 0;
         int high = 20000;
@@ -113,11 +101,14 @@ public class XpHelper {
 
     /**
      * Calculates the fair raw XP cost for an Enchanting operation.
-     * reqLevel: required level (e.g. 30 in vanilla, or higher in Apotheosis).
-     * levelCost: level cost (e.g. 3 in vanilla).
+     *
+     * @param reqLevel  required level (e.g. 30 in vanilla, or higher in Apotheosis)
+     * @param levelCost level cost (e.g. 3 in vanilla)
      */
     public static int getEnchantFairXpCost(int reqLevel, int levelCost) {
-        if (levelCost <= 0) return 0;
+        if (levelCost <= 0) {
+            return 0;
+        }
         if (reqLevel < levelCost) {
             reqLevel = levelCost;
         }
@@ -129,10 +120,13 @@ public class XpHelper {
 
     /**
      * Calculates the fair raw XP cost for an Anvil or general level deduction.
-     * levelCost: flat level cost (e.g. 12 levels).
+     *
+     * @param levelCost flat level cost (e.g. 12 levels)
      */
     public static int getAnvilFairXpCost(int levelCost) {
-        if (levelCost <= 0) return 0;
+        if (levelCost <= 0) {
+            return 0;
+        }
         int startXp = getRawXpForLevel(levelCost);
         return Math.max(1, startXp);
     }
