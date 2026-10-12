@@ -4,7 +4,7 @@
 
 # Fair Experience
 
-**Fair Experience** is a Minecraft 1.12.2 Forge mod that converts flat XP level costs into **fair raw XP costs** for Enchanting Tables, Anvils, and level-deducting mechanics.
+**Fair Experience** is a Minecraft 1.16.5 Forge mod that converts flat XP level costs into **fair raw XP costs** for Enchanting Tables, Anvils, and level-deducting mechanics.
 
 In vanilla Minecraft, higher levels require exponentially more raw XP per level. If you are Level 46 and use a Level 30 enchantment slot, vanilla subtracts a flat 3 levels (taking you down to Level 43), costing you over **900+ raw XP**. If you were Level 30, those same 3 levels would only cost **306 raw XP**.
 
@@ -25,26 +25,26 @@ In vanilla Minecraft, higher levels require exponentially more raw XP per level.
 
 ## ⚙️ Configuration
 
-Fair Experience provides a simple configuration file located at `config/fairexperience.cfg`:
+Fair Experience provides a simple configuration file located at `config/fairexperience-common.toml`:
 
-```hocon
+```toml
 # Configuration for Fair Experience
 
 general {
     # If true, anvil level costs will be converted to fair raw XP costs.
-    B:enableFairAnvils=true
+    enableFairAnvils = true
 
     # If true, anvil enchanting calculations are fair and order-independent: combining books or applying them in any order costs the same, prior work penalties do not penalize combines, and combining books to reach higher levels will not yield higher costs to combine with items.
-    B:enableFairAnvilCombining=true
+    enableFairAnvilCombining = true
 
     # If true, direct experienceLevel subtractions (e.g. by LevelUp2) will be converted to fair raw XP costs.
-    B:enableFairDirectModifications=true
+    enableFairDirectModifications = true
 
     # If true, enchanting table level costs will be converted to fair raw XP costs.
-    B:enableFairEnchanting=true
+    enableFairEnchanting = true
 
     # If true, removes the vanilla 40-level 'Too Expensive!' anvil limit, allowing operations that cost 40 or more levels. If false, operations costing 40+ levels are blocked like in vanilla.
-    B:removeTooExpensiveLimit=true
+    removeTooExpensiveLimit = true
 }
 ```
 
