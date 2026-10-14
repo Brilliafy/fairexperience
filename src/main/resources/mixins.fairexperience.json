@@ -4,9 +4,9 @@
   "compatibilityLevel": "JAVA_8",
   "refmap": "mixins.fairexperience.refmap.json",
   "mixins": [
-    "MixinPlayer",
-    "MixinEnchantmentMenu",
-    "MixinAnvilMenu"
+    "MixinPlayerEntity",
+    "MixinEnchantmentContainer",
+    "MixinRepairContainer"
   ],
   "client": [
     "MixinAnvilScreen"
